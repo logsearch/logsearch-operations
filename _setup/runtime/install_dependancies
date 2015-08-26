@@ -17,8 +17,6 @@ if ! (which nodejs 1>/dev/null 2>&1) ; then
   # Note the new setup script name for Node.js v0.12
   curl -sL https://deb.nodesource.com/setup_0.12 | sudo bash -
   apt-get install -y nodejs
-
-  ln -s /usr/bin/nodejs /usr/bin/node
 fi
 echo "nodejs: $(nodejs -v)" | head -n 1
 
@@ -31,6 +29,17 @@ if ! (which docker 1>/dev/null 2>&1) ; then
   wget -qO- https://get.docker.com/ubuntu/ | sh
 fi
 echo "docker: $(docker --version 2>&1)" | head -n 1
+
+
+#
+# system: docker-compose
+#
+if ! (which docker-compose 1>/dev/null 2>&1) ; then
+  echo "Installing docker-compose..."
+   curl -L https://github.com/docker/compose/releases/download/1.4.0/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose
+   chmod +x /usr/local/bin/docker-compose
+fi
+echo "docker-compose: $(docker-compose --version 2>&1)" | head -n 1
 
 #
 # system: apparmor
@@ -65,20 +74,20 @@ echo "curl: $(curl --version)" | head -n 1
 
 
 #
-# system: ruby 2.1.4p265 - replace Ubuntu's ruby 1.9 with the BOSH packaged version of ruby 
+# system: ruby 2.1.4p265 - replace Ubuntu's ruby 1.9 with the BOSH packaged version of ruby
 #
 if [[ ! "$(ruby -v)" =~ "ruby 2.1." ]]; then
   echo "Replacing Ubuntu's ruby 1.9 with the BOSH packaged version of ruby "
   apt-get remove ruby -y
   rm -rf /usr/local/bin/aws-rb
   rm -rf /usr/local/bin/blobstore_client_console
-  rm -rf /usr/local/bin/bosh-template 
+  rm -rf /usr/local/bin/bosh-template
   rm -rf /usr/local/bin/fog
-  rm -rf /usr/local/bin/htmldiff 
-  rm -rf /usr/local/bin/httpclient 
-  rm -rf /usr/local/bin/minitar 
-  rm -rf /usr/local/bin/nokogiri 
-  rm -rf /usr/local/bin/rake 
+  rm -rf /usr/local/bin/htmldiff
+  rm -rf /usr/local/bin/httpclient
+  rm -rf /usr/local/bin/minitar
+  rm -rf /usr/local/bin/nokogiri
+  rm -rf /usr/local/bin/rake
 
   echo "Ensuring Ruby 2.1 is in the path"
   echo "export PATH=$PATH:/var/vcap/packages/ruby/bin" >> /etc/profile.d/ruby2.1.sh # for future sessions
@@ -87,13 +96,14 @@ fi
 echo "ruby: $(ruby -v)" | head -n 1
 
 #
-# util: bosh_cli
-#
-if ! (gem list bosh_cli | grep bosh_cli 1>/dev/null 2>&1) ; then
-  echo "Installing bosh-cli"
-  gem install bosh_cli -v 1.2811.0 --no-ri --no-rdoc
+# util: bosh-workspace
+# This pulls bosh_cli as a dep
+if ! (gem list bosh-workspace | grep bosh-workspace 1>/dev/null 2>&1) ; then
+  echo "Installing bosh-workspace"
+  apt-get install pkg-config -y
+  yes y | gem install bosh-workspace -v 0.9.0 --no-ri --no-rdoc
 fi
-echo "bosh_cli: $(bosh -v)" | head -n 1
+echo "bosh-workspace: $(gem list bosh-workspace)" | tail -n 1
 
 #
 # util: patch bosh_cli to add string diffing of changesets
@@ -109,17 +119,17 @@ if ! (gem list diff-lcs | grep diff-lcs 1>/dev/null 2>&1) ; then
 fi
 echo "bosh_cli: Patched to add string diffing of changesets"
 
+echo "bosh_cli: make sure we use the newly installed bosh_cli bin"
+sudo rm /usr/local/bin/bosh
+sudo ln -s /var/vcap/packages/ruby/lib/ruby/gems/2.1.0/gems/bosh_cli-*/bin/bosh /usr/local/bin/bosh
+
 #
-# util: bosh-workspace
-#
-if ! (gem list bosh-workspace | grep bosh-workspace 1>/dev/null 2>&1) ; then
-  echo "Installing bosh-workspace"
-  apt-get install pkg-config -y
-  #gem install specific_install --no-ri --no-rdoc
-  #gem specific_install https://github.com/cloudfoundry-incubator/bosh-workspace.git v0.9.0.rc4
-  yes y | gem install bosh-workspace -v 0.9.0.rc4 --pre
+# util: bosh-gen
+if ! (gem list bosh-gem | grep bosh-gen 1>/dev/null 2>&1) ; then
+  echo "Installing bosh-gen"
+  gem install bosh-gen --no-ri --no-rdoc
 fi
-echo "bosh-workspace: $(gem list bosh-workspace)" | tail -n 1
+echo "bosh-gen: $(gem list bosh-gen)" | tail -n 1
 
 #
 # system: git
@@ -152,6 +162,16 @@ fi
 echo "spiff: $(spiff --version)" | head -n 1
 
 #
+# system: zip and unzip
+#
+if ! (which zip 1>/dev/null 2>&1) ; then
+  echo "Installing zip and unzip"
+  apt-get install zip unzip -y
+fi
+echo "zip/unzip: $(zip -v | head -n 1)/$(unzip -v | head -n 1)"
+
+#
+#
 # system: hg
 #
 if ! (which hg 1>/dev/null 2>&1) ; then
@@ -164,11 +184,23 @@ echo "hg: $(hg --version)" | head -n 1
 # system: java
 #
 if ! (which java 1>/dev/null 2>&1) ; then
-  echo "Installing java..."
-
-  apt-get install -y openjdk-7-jre-headless
+  echo "Installing OpenJDK 8..."
+  add-apt-repository -y ppa:openjdk-r/ppa
+  apt-get update
+  apt-get install -y openjdk-8-jdk
+  echo 'export JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"' >> /etc/profile
 fi
 echo "java: $(java -version 2>&1 | awk -F '\\"' '/version/ { print $2 }')"
+
+#
+# system: maven-3
+#
+if ! (which mvn 1>/dev/null 2>&1) ; then
+  echo "Installing maven 3.3.3..."
+  curl http://mirrors.ukfast.co.uk/sites/ftp.apache.org/maven/maven-3/3.3.3/binaries/apache-maven-3.3.3-bin.tar.gz | tar xz -C /usr/local/
+  ln -s /usr/local/apache-maven-3.3.3/bin/mvn /usr/local/bin/mvn
+fi
+echo "maven: $(mvn -version) | head -n 1"
 
 #
 # system: grunt-cli
@@ -195,12 +227,7 @@ echo "bower: $( bower --version)" | head -n 1
 #
 if ! (which jekyll 1>/dev/null 2>&1) ; then
   echo "Installing jekyll ..."
-
-  # jekyll needs to use ruby 2+ (or jekyll serve fails wih https://github.com/celluloid/celluloid/wiki/Fiber-stack-errors)
-  # so we install it for /var/vcap/packages/ruby (which is ruby 2.1) 
-  # rather than the system ruby (which is ruby 1.9) 
-
-  /var/vcap/packages/ruby/bin/gem install jekyll --no-rdoc --no-ri
+  gem install jekyll --no-rdoc --no-ri
 fi
 echo "jekyll: $(jekyll -version)" | head -n 1
 
@@ -219,7 +246,7 @@ if [ ! -f /usr/local/logstash-$LOGSTASH_VERSION/bin/logstash ]; then
     bin/plugin install logstash-filter-translate
   )
   echo "Fixing permissions"
-  chmod a+r+w /usr/local/logstash-$LOGSTASH_VERSION/.bundle/config 
+  chmod a+r+w /usr/local/logstash-$LOGSTASH_VERSION/.bundle/config
   echo "Patching output/syslog plugin to support structured_data..."
   curl -L https://raw.githubusercontent.com/logsearch/logstash-output-syslog/master/lib/logstash/outputs/syslog.rb > /usr/local/logstash-$LOGSTASH_VERSION/lib/logstash/outputs/syslog.rb
   echo "Ensuring logstash is in the path"
@@ -251,6 +278,16 @@ fi
 echo "vim: $(vim --version)" | head -n 1
 
 #
+# util: emacs
+#
+if ! (which emacs 1>/dev/null 2>&1) ; then
+  echo "Installing emacs"
+
+  apt-get install -y emacs
+fi
+echo "emacs: $(emacs --version)" | head -n 1
+
+#
 # util: tig
 #
 if ! (which tig 1>/dev/null 2>&1) ; then
@@ -259,7 +296,6 @@ if ! (which tig 1>/dev/null 2>&1) ; then
   apt-get install -y tig
 fi
 echo "tig: $(tig --version)" | head -n 1
-
 
 #
 # util: floomatic
@@ -296,12 +332,32 @@ echo "htop: $(htop --version 2>&1)" | head -n 1
 #
 # util: tree
 #
+if ! (which siege 1>/dev/null 2>&1) ; then
+  echo "Installing siege"
+
+  apt-get install siege -y
+fi
+echo "siege: $(siege --version 2>&1)" | head -n 1
+
+#
+# util: tree
+#
 if ! (which tree 1>/dev/null 2>&1) ; then
   echo "Installing tree..."
 
   apt-get install tree -y
 fi
 echo "tree: $(tree --version 2>&1)" | head -n 1
+
+#
+# util: httparty
+#
+if ! (which httparty 1>/dev/null 2>&1) ; then
+  echo "Installing httparty"
+
+  gem install httparty --no-ri --no-rdoc
+fi
+echo "httparty: $(httparty --version 2>&1)" | head -n 1
 
 #
 # util: tree
@@ -347,7 +403,7 @@ service ssh reload
 if [ $(dpkg-query -W -f='${Status}' iptables-persistent 2>/dev/null | grep -c "ok installed") -eq 0 ];
 then
   echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
-  echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
+1  echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
   apt-get install iptables-persistent -y
 fi
 
